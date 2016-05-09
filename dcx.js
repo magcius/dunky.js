@@ -1,4 +1,5 @@
 (function(exports) {
+    "use strict";
 
     // XXX: I have no idea what the "real" format is but this seems to be the
     // format of all the .dcx files I can find...

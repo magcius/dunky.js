@@ -4,7 +4,20 @@
     <meta charset="utf8">
     <title>dunky.js</title>
     <style>
-    .loading { position: absolute !important; bottom: 32px; left: 32px; }
+    body {
+        margin: 0;
+        background: black;
+    }
+    .load-indicator {
+        position: absolute !important;
+        bottom: 32px;
+        left: 32px;
+        opacity: 0;
+        transition: opacity 1s;
+    }
+    .load-indicator.loading {
+        opacity: 1;
+    }
     </style>
   </head>
   <body>
@@ -14,6 +27,8 @@
     <script src="dds.js"></script>
     <script src="bhd5.js"></script>
     <script src="tpf.js"></script>
+    <script src="msb.js"></script>
+    <script src="flver.js"></script>
     <script src="dks.js"></script>
   </body>
 </html>

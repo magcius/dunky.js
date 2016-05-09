@@ -1,12 +1,11 @@
 (function(exports) {
+    "use strict";
 
     function LocalHttpFile(path) {
         this._path = path;
     };
     LocalHttpFile.prototype.load = function(offs, size) {
         return new Promise(function(resolve, reject) {
-            return reject();
-
             var request = new XMLHttpRequest();
             request.open("GET", this._path, true);
             request.responseType = "blob";
@@ -159,9 +158,21 @@
         return this._records[hash];
     };
 
+    function ModelCache(dunk) {
+        this._dunk = dunk;
+        this._cache = {};
+    }
+    ModelCache.prototype.loadModel = function(model) {
+        var path = model.archivePath;
+        if (!this._cache[path])
+            this._cache[path] = this._dunk.archiveManager.lookupRecord(model.archivePath).loadDCX().then(FLVER.parse);
+        return this._cache[path];
+    };
+
     function Dunk(fs) {
         this._fs = fs;
         this.archiveManager = new ArchiveManager(this._fs);
+        this.modelCache = new ModelCache(this);
     }
     Dunk.prototype.load = function() {
         return Promise.all([
@@ -178,10 +189,7 @@
         });
     }
 
-    function Animation(fps, imageData, xCells, yCells) {
-        this._fps = fps;
-        this._timeout = 1000/fps;
-
+    function Animation(imageData, xCells, yCells) {
         this._imageData = imageData;
         this._xCells = xCells;
         this._yCells = yCells;
@@ -219,29 +227,48 @@
         this._canvas.style.top = (-yCell * h) + 'px';
 
         this._frame = (++this._frame) % this._numFrames;
-        setTimeout(this._update.bind(this), this._timeout);
+        requestAnimationFrame(this._update.bind(this));
     };
     Animation.prototype.start = function() {
-        setTimeout(this._update.bind(this), this._timeout);
+        this._update();
     };
 
-    function showLoadingAnimation(dunk) {
+    function buildLoadIndicator(dunk) {
         var nowloading = dunk.archiveManager.lookupRecord("/menu/nowloading.tpf.dcx");
-        return nowloading.loadDCX().then(function(data) {
-            var tpf = TPF.parse(data);
+        return nowloading.loadDCX().then(function(buffer) {
+            var tpf = TPF.parse(buffer);
             var dds = DDS.parse(tpf.texturesByName['soul_sequence'].data);
-            var anim = new Animation(30, dds.levels[0], 8, 4);
+            var anim = new Animation(dds.levels[0], 8, 4);
 
-            document.body.style = 'background: black';
             document.body.appendChild(anim.elem);
+            anim.elem.classList.add('load-indicator');
             anim.elem.classList.add('loading');
             anim.start();
+            return anim;
         });
+    }
+
+    function loadMap(dunk, mapID) {
+        var recordPath = '/map/MapStudio/' + mapID + '.msb';
+        var msbFile = dunk.archiveManager.lookupRecord(recordPath);
     }
 
     window.onload = function() {
         globalLoad().then(function(dunk) {
-            showLoadingAnimation(dunk);
+            buildLoadIndicator(dunk);
+
+            var msbFile = dunk.archiveManager.lookupRecord('/map/MapStudio/m10_00_00_00.msb');
+            msbFile.load().then(loadBlob).then(function(buffer) {
+                var msb = MSB.parse('m10_00_00_00', buffer);
+                msb.parts.forEach(function(part) {
+                    if (part.type !== MSB.PartType.MapPiece)
+                        return;
+
+                    var model = msb.models[part.modelIndex];
+                    dunk.modelCache.loadModel(model).then(function(flver) {
+                    });
+                });
+            });
         });
     };
 
