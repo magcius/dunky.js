@@ -150,7 +150,7 @@
     ArchiveManager.prototype._hashString = function(str) {
         var h = 0;
         str.toLowerCase().split('').forEach(function(chr) {
-            h = (37*h + chr.charCodeAt(0)) & 0xFFFFFFFF;
+            h = ((37*h + chr.charCodeAt(0)) & 0xFFFFFFFF) >>> 0;
         });
         return h;
     };
