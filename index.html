@@ -32,6 +32,30 @@
         position: absolute;
         bottom: 32px;
         right: 32px;
+        text-align: right;
+        color: #333;
+        font: bold 10pt sans-serif;
+    }
+    .drop-target {
+        position: fixed;
+        box-sizing: border-box;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .drop-target.dropping {
+        text-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+        background-color: #eef;
+    }
+    .drop-target div {
+        font: 24pt sans-serif;
+        color: black;
+        text-align: center;
     }
     </style>
   </head>

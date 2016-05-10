@@ -50,21 +50,36 @@
     function DataDragFileSystem() {
         this._files = [];
 
+        this._filesLeft = {
+            'dvdbnd0.bhd5': 1,
+            'dvdbnd0.bdt': 1,
+            'dvdbnd1.bhd5': 1,
+            'dvdbnd1.bdt': 1,
+        };
         this._container = document.createElement('div');
-        this._container.style.background = '#666';
-        this._container.style.width = '200px';
-        this._container.style.height = '200px';
+        this._container.classList.add('drop-target');
+        this._explanation = document.createElement('div');
+        this._container.appendChild(this._explanation);
+        this._updateExplanation();
         this._container.ondragover = function(e) {
-            this._container.style.background = '#aaa';
+            this._container.classList.add('dropping');
+            e.preventDefault();
+        }.bind(this);
+        this._container.ondragleave = function(e) {
+            this._container.classList.remove('dropping');
             e.preventDefault();
         }.bind(this);
         this._container.ondrop = function(e) {
             var transfer = e.dataTransfer;
             [].forEach.call(transfer.files, function(file) {
                 this._files[file.name] = file;
+                delete this._filesLeft[file.name];
             }.bind(this));
             e.preventDefault();
-            this._loadComplete();
+
+            this._updateExplanation();
+            if (Object.keys(this._filesLeft).length === 0)
+                this._loadComplete();
         }.bind(this);
 
         this._promise = new Promise(function(resolve, reject) {
@@ -73,6 +88,10 @@
 
         document.body.appendChild(this._container);
     }
+    DataDragFileSystem.prototype._updateExplanation = function() {
+        var filesLeft = Object.keys(this._filesLeft);
+        this._explanation.textContent = "Please drag " + filesLeft.join(', ') + " from the Dark Souls DATA folder here";
+    };
     DataDragFileSystem.prototype._loadComplete = function() {
         document.body.removeChild(this._container);
         this._resolve(this);
@@ -177,7 +196,7 @@
         this._textures = textures;
     }
     Resources.prototype._getKey = function(name) {
-        var key = '\\' + name.split('\\').pop();
+        var key = name.split('\\').pop();
         key = key.replace('.tga', '.tpf.dcx');
         return key;
     };
@@ -218,25 +237,25 @@
     };
 
     var MAP_FILES = [
-        'm10_00_00_00',
-        'm10_01_00_00',
-        'm10_02_00_00',
-        'm11_00_00_00',
-        'm12_00_00_00',
-        'm12_00_00_01',
-        'm12_01_00_00',
-        'm13_00_00_00',
-        'm13_01_00_00',
-        'm13_02_00_00',
-        'm14_00_00_00',
-        'm14_01_00_00',
-        'm15_00_00_00',
-        'm15_01_00_00',
-        'm16_00_00_00',
-        'm17_00_00_00',
-        'm18_00_00_00',
-        'm18_01_00_00',
-    ]
+        { mapID: 'm10_01_00_00', label: "Undead Burg" },
+        { mapID: 'm10_00_00_00', label: "The Depths" },
+        { mapID: 'm10_02_00_00', label: "Firelink Shrine" },
+        { mapID: 'm11_00_00_00', label: "Painted World" },
+        { mapID: 'm12_00_00_00', label: "Darkroot Forest" },
+        { mapID: 'm12_00_00_01', label: "Darkroot Basin" },
+        { mapID: 'm12_01_00_00', label: "Royal Wood" },
+        { mapID: 'm13_00_00_00', label: "The Catacombs" },
+        { mapID: 'm13_01_00_00', label: "Tomb of the Giants" },
+        { mapID: 'm13_02_00_00', label: "Ash Lake" },
+        { mapID: 'm14_00_00_00', label: "Blighttown" },
+        { mapID: 'm14_01_00_00', label: "Demon Ruinds" },
+        { mapID: 'm15_00_00_00', label: "Sen's Fortress" },
+        { mapID: 'm15_01_00_00', label: "Anor Londo" },
+        { mapID: 'm16_00_00_00', label: "New Londo Ruins" },
+        { mapID: 'm17_00_00_00', label: "Duke's Archives / Crystal Caves" },
+        { mapID: 'm18_00_00_00', label: "Kiln of the First Flame" },
+        { mapID: 'm18_01_00_00', label: "Undead Asylum" },
+    ];
 
     function Dunk(fs) {
         this._fs = fs;
@@ -249,17 +268,15 @@
         }.bind(this)).then(function() {
             this._driver = new GLRender.Driver();
             this._buildUI();
-            console.log("XXX");
             return this;
         }.bind(this));
     };
     Dunk.prototype._buildMapSelect = function() {
         var select = document.createElement('select');
-        select.classList.add('map-select');
-        MAP_FILES.forEach(function(mapID) {
+        MAP_FILES.forEach(function(map) {
             var option = document.createElement('option');
-            option.textContent = mapID;
-            option.mapID = mapID;
+            option.textContent = map.label;
+            option.mapID = map.mapID;
             select.appendChild(option);
         });
         select.oninput = function() {
@@ -267,10 +284,20 @@
             this.selectMap(mapID);
         }.bind(this);
         select.oninput();
-        document.body.appendChild(select);
+        return select;
     };
     Dunk.prototype._buildUI = function() {
-        this._buildMapSelect();
+        var ui = document.createElement('div');
+        ui.classList.add('map-select');
+        var author = document.createElement('p');
+        ui.appendChild(author);
+        author.textContent = 'made by Jasper St. Pierre';
+        var controls = document.createElement('p');
+        controls.textContent = 'WASD, shift to go faster, B to reset the camera';
+        ui.appendChild(controls);
+        var select = this._buildMapSelect();
+        ui.appendChild(select);
+        document.body.appendChild(ui);
     };
     Dunk.prototype._loadBHD = function(bhdPath, bdtPath, records) {
         var bdt = this.archiveManager.lookupRecord(bdtPath);
@@ -297,7 +324,8 @@
             var bdtPath = path + '.tpfbdt';
             return this._loadBHD(bhdPath, bdtPath).then(function(records) {
                 records.forEach(function(record) {
-                    textures[record.filename] = record;
+                    var filename = record.filename.split('\\').pop();
+                    textures[filename] = record;
                 });
             });
         }.bind(this);
@@ -336,6 +364,7 @@
         return this.loadMap(mapID).then(function(map) {
             return map.buildModel(this._driver.gl).then(function(model) {
                 this._setLoading(false);
+                this._driver.resetCamera();
                 this._driver.setModels([model]);
             }.bind(this));
         }.bind(this));

@@ -480,6 +480,9 @@
     Driver.prototype.setModels = function(models) {
         this._scene.models = models;
     };
+    Driver.prototype.resetCamera = function() {
+        mat4.identity(this._camera);
+    };
     GLRender.Driver = Driver;
 
     exports.GLRender = GLRender;

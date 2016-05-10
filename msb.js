@@ -32,8 +32,8 @@
         this.archivePath = this._getArchivePath();
     }
     Model.prototype._getArchivePath = function() {
-        var mapID = this.msb.mapID;
-        return '/map/' + mapID + '/' + this.name + 'A' + mapID.slice(1, 3) + '.flver.dcx';
+        var mapID = this.msb.mapID.slice(0, 6); // "m10_00"
+        return '/map/' + mapID + '_00_00/' + this.name + 'A' + mapID.slice(1, 3) + '.flver.dcx';
     };
 
     function Part(msb, name, type, modelIndex, translation, rotation, scale) {
