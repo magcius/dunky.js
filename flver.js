@@ -27,37 +27,15 @@
         return L.join('');
     }
 
-    FLVER.StreamDescAttrib = {
+    FLVER.formatAttrib = {
         Position:   0,
-        BoneIdx:    1,
-        BoneWeight: 2,
+        jointIdx:    1,
+        jointWeight: 2,
         Normal:     3,
         UV:         5,
         Bitangent:  6,
         Color:      10,
     };
-
-    function getStreamDescDataSize(dataType) {
-        // TODO: Figure out what these data types are.
-        switch (dataType) {
-        case 17:
-        case 19:
-        case 21:
-            return 4;
-        case 22:
-        case 26:
-            return 8;
-        case 2:
-        case 18:
-        case 20:
-        case 23:
-        case 24:
-        case 25:
-            return 12;
-        }
-
-        XXX;
-    }
 
     FLVER.parse = function(buffer) {
         var flver = {};
@@ -70,10 +48,10 @@
 
         var hitboxCount = view.getUint32(0x14, true);
         var materialCount = view.getUint32(0x18, true);
-        var boneCount = view.getUint32(0x1C, true);
+        var jointCount = view.getUint32(0x1C, true);
         var vtxInfoCount = view.getUint32(0x20, true);
-        var meshCount = view.getUint32(0x24, true);
-        var facesetCount = view.getUint32(0x50, true);
+        var batchCount = view.getUint32(0x24, true);
+        var primitiveCount = view.getUint32(0x50, true);
         var vtxDescCount = view.getUint32(0x54, true);
         var mtdParamCount = view.getUint32(0x58, true);
 
@@ -114,91 +92,94 @@
             var mat = {};
             mat.name = readStringW();
             mat.mtdName = readStringW();
+            mat.mtdParamCount = lw();
+            mat.mtdParamStart = lw();
+            mat.mtdParamEnd = mat.mtdParamStart + mat.mtdParamCount;
 
             // Unk.
-            offs += 0x18;
+            offs += 0x10;
 
             return mat;
         }
 
         flver.materials = collect(materialCount, readMaterial);
 
-        function readBone() {
-            var bone = {};
-            bone.translation = readVec3();
-            bone.name = readStringW();
-            bone.rotation = readVec3();
+        function readjoint() {
+            var joint = {};
+            joint.translation = readVec3();
+            joint.name = readStringW();
+            joint.rotation = readVec3();
 
-            bone.parentID = view.getUint16(offs, true);
+            joint.parentID = view.getUint16(offs, true);
             offs += 0x02;
-            bone.firstChildID = view.getUint16(offs, true);
+            joint.firstChildID = view.getUint16(offs, true);
             offs += 0x02;
 
-            bone.scale = readVec3();
+            joint.scale = readVec3();
 
-            bone.firstSiblingID = view.getUint16(offs, true);
+            joint.firstSiblingID = view.getUint16(offs, true);
             offs += 0x02;
-            bone.id = view.getUint16(offs, true);
+            joint.id = view.getUint16(offs, true);
             offs += 0x02;
             offs += 0x50;
-            return bone;
+            return joint;
         }
 
-        flver.bones = collect(boneCount, readBone);
+        flver.joints = collect(jointCount, readjoint);
 
-        var boneStart = 0, facesetStart = 0, vtxInfoStart = 0;
-        function readMesh() {
-            var mesh = {};
-            mesh.flags = lw();
-            mesh.materialIdx = lw();
+        var jointStart = 0, primitiveStart = 0, vtxInfoStart = 0;
+        function readbatch() {
+            var batch = {};
+            batch.flags = lw();
+            batch.materialIdx = lw();
 
             // Unk.
             offs += 0x08;
             offs += 0x04;
 
-            mesh.boneStart = boneStart;
-            mesh.boneCount = lw();
-            boneStart += mesh.boneCount;
+            batch.jointStart = jointStart;
+            batch.jointCount = lw();
+            jointStart += batch.jointCount;
             // Unk.
             offs += 0x04;
-            mesh.boneOffs = lw();
-            mesh.facesetStart = facesetStart;
-            mesh.facesetCount = lw();
-            facesetStart += mesh.facesetCount;
-            mesh.facesetOffs = lw();
-            mesh.facesetEnd = mesh.facesetStart + mesh.facesetCount;
-            mesh.vtxInfoStart = vtxInfoStart;
-            mesh.vtxInfoCount = lw();
-            vtxInfoStart += mesh.vtxInfoCount;
-            mesh.vtxInfoOffs = lw();
-            return mesh;
+            batch.jointOffs = lw();
+            batch.primitiveStart = primitiveStart;
+            batch.primitiveCount = lw();
+            primitiveStart += batch.primitiveCount;
+            batch.primitiveOffs = lw();
+            batch.primitiveEnd = batch.primitiveStart + batch.primitiveCount;
+            batch.vtxInfoStart = vtxInfoStart;
+            batch.vtxInfoCount = lw();
+            vtxInfoStart += batch.vtxInfoCount;
+            batch.vtxInfoOffs = lw();
+            return batch;
         }
 
-        flver.meshes = collect(meshCount, readMesh);
+        flver.batches = collect(batchCount, readbatch);
 
-        function readFaceset() {
-            var faceset = {};
-            faceset.flags = lw();
+        function readprimitive() {
+            var primitive = {};
+            primitive.flags = lw();
             // Primitive type.
-            faceset.drawType = view.getUint8(offs);
+            primitive.drawType = view.getUint8(offs);
             // Have only seen tristrip so far.
-            assert(faceset.drawType == 1);
+            assert(primitive.drawType == 1);
             offs += 0x01;
-            faceset.culling = view.getUint8(offs);
+            primitive.culling = view.getUint8(offs);
             offs += 0x01;
             // Pad / unk.
             offs += 0x02;
-            faceset.idxCount = lw();
-            var bufSize = faceset.idxCount * 2;
+            primitive.idxCount = lw();
+            var bufSize = primitive.idxCount * 2;
             var bufOffs = lw();
             // XXX: We should bind one big buffer instead of uploading separate ones.
-            faceset.idxBufferData = new Uint16Array(buffer.slice(dataOffs + bufOffs, dataOffs + bufOffs + bufSize));
+            primitive.idxBufferData = new Uint16Array(buffer.slice(dataOffs + bufOffs, dataOffs + bufOffs + bufSize));
             // Unk.
             offs += 0x10;
-            return faceset;
+            return primitive;
         }
 
-        flver.facesets = collect(facesetCount, readFaceset);
+        flver.primitives = collect(primitiveCount, readprimitive);
 
         function readVtxInfo() {
             var vtxInfo = {};
@@ -219,13 +200,13 @@
 
         flver.vtxInfos = collect(vtxInfoCount, readVtxInfo);
 
-        var streamDescStart = 0;
+        var formatStart = 0;
         function readVtxDesc() {
             var vtxDesc = {};
-            vtxDesc.streamDescStart = streamDescStart;
-            vtxDesc.streamDescCount = lw();
-            vtxDesc.streamDescEnd = vtxDesc.streamDescStart + vtxDesc.streamDescCount;
-            streamDescStart += vtxDesc.streamDescCount;
+            vtxDesc.formatStart = formatStart;
+            vtxDesc.formatCount = lw();
+            vtxDesc.formatEnd = vtxDesc.formatStart + vtxDesc.formatCount;
+            formatStart += vtxDesc.formatCount;
             // Unk.
             offs += 0x08;
             offs += 0x04;
@@ -245,24 +226,21 @@
 
         flver.mtdParams = collect(mtdParamCount, readMtdParam);
 
-        var streamDescCount = 0;
-        flver.vtxDescs.forEach(function(v) { streamDescCount += v.streamDescCount; });
+        var formatCount = 0;
+        flver.vtxDescs.forEach(function(v) { formatCount += v.formatCount; });
 
-        function readStreamDesc() {
-            var streamDesc = {};
+        function readformat() {
+            var format = {};
             // Unk.
             offs += 0x04;
-            streamDesc.offset = lw();
-            streamDesc.dataType = lw();
-            streamDesc.attrib = lw();
-            streamDesc.idx = lw();
-
-            streamDesc.size = getStreamDescDataSize(streamDesc.dataType);
-
-            return streamDesc;
+            format.offset = lw();
+            format.dataType = lw();
+            format.attrib = lw();
+            format.idx = lw();
+            return format;
         }
 
-        flver.streamDescs = collect(streamDescCount, readStreamDesc);
+        flver.formats = collect(formatCount, readformat);
 
         return flver;
     };

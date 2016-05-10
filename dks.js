@@ -5,6 +5,8 @@
         this._path = path;
     };
     LocalHttpFile.prototype.load = function(offs, size) {
+        return Promise.reject();
+
         return new Promise(function(resolve, reject) {
             var request = new XMLHttpRequest();
             request.open("GET", this._path, true);
@@ -31,10 +33,10 @@
         return new LocalHttpFile(path);
     };
 
-    function DataDragFileSystemFile(blob) {
+    function BlobFileSystemFile(blob) {
         this._blob = blob;
     }
-    DataDragFileSystemFile.prototype.load = function(offs, size) {
+    BlobFileSystemFile.prototype.load = function(offs, size) {
         return new Promise(function(resolve, reject) {
             if (offs !== undefined && size !== undefined) {
                 var start = offs, end = offs + size;
@@ -79,7 +81,7 @@
         return this._promise;
     };
     DataDragFileSystem.prototype.getFile = function(filename) {
-        return new DataDragFileSystemFile(this._files[filename]);
+        return new BlobFileSystemFile(this._files[filename]);
     };
 
     function getFileSystem() {
@@ -105,6 +107,7 @@
             reader.readAsArrayBuffer(blob);
         });
     }
+    window.loadBlob = loadBlob;
 
     function loadBlobAsText(blob) {
         return new Promise(function(resolve, reject) {
@@ -169,16 +172,193 @@
         return this._cache[path];
     };
 
+    function Resources(dunk, textures) {
+        this._dunk = dunk;
+        this._textures = textures;
+    }
+    Resources.prototype._getKey = function(name) {
+        var key = '\\' + name.split('\\').pop();
+        key = key.replace('.tga', '.tpf.dcx');
+        return key;
+    };
+    Resources.prototype.loadTexture = function(name) {
+        var key = this._getKey(name);
+        var record = this._textures[key];
+        if (!record)
+            return Promise.reject();
+
+        return record.loadDCX().then(TPF.parse).then(function(tpf) {
+            return DDS.parse(tpf.textures[0].data);
+        });
+    };
+
+    function Map(dunk, mapID, msb, resources) {
+        this._dunk = dunk;
+        this._mapID = mapID;
+        this._msb = msb;
+        this._resources = resources;
+    }
+    Map.prototype.buildModel = function(gl) {
+        return Promise.all(this._msb.parts.filter(function(part) {
+            return part.type === MSB.PartType.MapPiece;
+        }).map(function(part) {
+            return this._dunk.modelCache.loadModel(this._msb.models[part.modelIndex]).then(function(flver) {
+                var model = GLRender.translateFLVER(gl, flver, this._resources);
+                return model;
+            }.bind(this));
+        }.bind(this))).then(function(models) {
+            var model = {};
+            model.draw = function(state) {
+                models.forEach(function(model) {
+                    model.draw(state);
+                });
+            };
+            return model;
+        });
+    };
+
+    var MAP_FILES = [
+        'm10_00_00_00',
+        'm10_01_00_00',
+        'm10_02_00_00',
+        'm11_00_00_00',
+        'm12_00_00_00',
+        'm12_00_00_01',
+        'm12_01_00_00',
+        'm13_00_00_00',
+        'm13_01_00_00',
+        'm13_02_00_00',
+        'm14_00_00_00',
+        'm14_01_00_00',
+        'm15_00_00_00',
+        'm15_01_00_00',
+        'm16_00_00_00',
+        'm17_00_00_00',
+        'm18_00_00_00',
+        'm18_01_00_00',
+    ]
+
     function Dunk(fs) {
         this._fs = fs;
         this.archiveManager = new ArchiveManager(this._fs);
         this.modelCache = new ModelCache(this);
     }
     Dunk.prototype.load = function() {
-        return Promise.all([
-            this.archiveManager.load(),
-        ]).then(function() {
+        return this.archiveManager.load().then(function() {
+            return this._loadLoadScreen();
+        }.bind(this)).then(function() {
+            this._driver = new GLRender.Driver();
+            this._buildUI();
+            console.log("XXX");
             return this;
+        }.bind(this));
+    };
+    Dunk.prototype._buildMapSelect = function() {
+        var select = document.createElement('select');
+        select.classList.add('map-select');
+        MAP_FILES.forEach(function(mapID) {
+            var option = document.createElement('option');
+            option.textContent = mapID;
+            option.mapID = mapID;
+            select.appendChild(option);
+        });
+        select.oninput = function() {
+            var mapID = select.selectedOptions[0].mapID;
+            this.selectMap(mapID);
+        }.bind(this);
+        select.oninput();
+        document.body.appendChild(select);
+    };
+    Dunk.prototype._buildUI = function() {
+        this._buildMapSelect();
+    };
+    Dunk.prototype._loadBHD = function(bhdPath, bdtPath, records) {
+        var bdt = this.archiveManager.lookupRecord(bdtPath);
+        return this.archiveManager.lookupRecord(bhdPath).load().then(loadBlob).then(function(bhd) {
+            records = records || [];
+            return BHD.load(bdt, records, bhd);
+        });
+    };
+    Dunk.prototype._loadMapTextures = function(mapID) {
+        var textures = {};
+
+        var loadTextureTPF = function(record) {
+            return record.loadDCX().then(function(buffer) {
+                return TPF.parse(buffer, textures);
+            });
+        };
+
+        var tpf = function(path) {
+            return loadTextureTPF(this.archiveManager.lookupRecord(path));
+        }.bind(this);
+
+        var bhd = function(path) {
+            var bhdPath = path + '.tpfbhd';
+            var bdtPath = path + '.tpfbdt';
+            return this._loadBHD(bhdPath, bdtPath).then(function(records) {
+                records.forEach(function(record) {
+                    textures[record.filename] = record;
+                });
+            });
+        }.bind(this);
+
+        var mapKey = mapID.slice(0, 3); // "m10"
+        var fileBase = '/map/' + mapKey + '/' + mapKey + '_';
+        return Promise.all([
+            bhd(fileBase + '0000'),
+            bhd(fileBase + '0001'),
+            bhd(fileBase + '0002'),
+            bhd(fileBase + '0003'),
+            tpf(fileBase + '9999.tpf.dcx'),
+        ]).then(function() {
+            return textures;
+        });
+    };
+    Dunk.prototype._loadMSB = function(mapID) {
+        var recordPath = '/map/MapStudio/' + mapID + '.msb';
+        var msbFile = this.archiveManager.lookupRecord(recordPath);
+        return msbFile.load().then(loadBlob).then(function(buffer) {
+            return MSB.parse(mapID, buffer);
+        });
+    };
+    Dunk.prototype.loadMap = function(mapID) {
+        return Promise.all([
+            this._loadMSB(mapID),
+            this._loadMapTextures(mapID),
+        ]).then(function(r) {
+            var msb = r[0], textures = r[1];
+            var resources = new Resources(this, textures);
+            return new Map(this, mapID, msb, resources);
+        }.bind(this));
+    };
+    Dunk.prototype.selectMap = function(mapID) {
+        this._setLoading(true);
+        return this.loadMap(mapID).then(function(map) {
+            return map.buildModel(this._driver.gl).then(function(model) {
+                this._setLoading(false);
+                this._driver.setModels([model]);
+            }.bind(this));
+        }.bind(this));
+    };
+    Dunk.prototype._setLoading = function(loading) {
+        this._loadScreen.classList.toggle('loading', loading);
+    };
+    Dunk.prototype._loadLoadScreen = function() {
+        var nowloading = this.archiveManager.lookupRecord("/menu/nowloading.tpf.dcx");
+        return nowloading.loadDCX().then(function(buffer) {
+            var tpf = TPF.parse(buffer);
+            var dds = DDS.parse(tpf.texturesByName['soul_sequence'].data);
+            var imgData = dds.levels[0].decode();
+            var anim = new Animation(imgData, 8, 4);
+
+            var loadScreen = document.createElement('div');
+            loadScreen.classList.add('load-screen');
+            loadScreen.appendChild(anim.elem);
+            anim.elem.classList.add('load-indicator');
+            anim.start();
+            document.body.appendChild(loadScreen);
+            this._loadScreen = loadScreen;
+            this._setLoading(true);
         }.bind(this));
     };
 
@@ -233,43 +413,8 @@
         this._update();
     };
 
-    function buildLoadIndicator(dunk) {
-        var nowloading = dunk.archiveManager.lookupRecord("/menu/nowloading.tpf.dcx");
-        return nowloading.loadDCX().then(function(buffer) {
-            var tpf = TPF.parse(buffer);
-            var dds = DDS.parse(tpf.texturesByName['soul_sequence'].data);
-            var anim = new Animation(dds.levels[0], 8, 4);
-
-            document.body.appendChild(anim.elem);
-            anim.elem.classList.add('load-indicator');
-            anim.elem.classList.add('loading');
-            anim.start();
-            return anim;
-        });
-    }
-
-    function loadMap(dunk, mapID) {
-        var recordPath = '/map/MapStudio/' + mapID + '.msb';
-        var msbFile = dunk.archiveManager.lookupRecord(recordPath);
-    }
-
     window.onload = function() {
-        globalLoad().then(function(dunk) {
-            buildLoadIndicator(dunk);
-
-            var msbFile = dunk.archiveManager.lookupRecord('/map/MapStudio/m10_00_00_00.msb');
-            msbFile.load().then(loadBlob).then(function(buffer) {
-                var msb = MSB.parse('m10_00_00_00', buffer);
-                msb.parts.forEach(function(part) {
-                    if (part.type !== MSB.PartType.MapPiece)
-                        return;
-
-                    var model = msb.models[part.modelIndex];
-                    dunk.modelCache.loadModel(model).then(function(flver) {
-                    });
-                });
-            });
-        });
+        globalLoad();
     };
 
 })(window);

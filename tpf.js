@@ -35,6 +35,7 @@
         this.textures = [];
         this.texturesByName = {};
     }
+
     TPF.parse = function(buffer) {
         var tpf = new TPF();
 

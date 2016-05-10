@@ -166,17 +166,43 @@
                 }
             }
         }
-
-        return offs;
     }
 
-    var DDS = {};
+    function getCompressedBufferSize(format, w, h) {
+        if (format === "DXT1")
+            return (w * h) / 2;
+        else if (format == "DXT3")
+            return (w * h);
+        else if (format == "DXT5")
+            return (w * h);
+    }
 
+    function Level(idx, format, width, height, buffer) {
+        this.idx = idx;
+        this.format = format;
+        this.width = width;
+        this.height = height;
+        this.buffer = buffer;
+    }
+    Level.prototype.decode = function() {
+        var w = this.width, h = this.height, buffer = this.buffer;
+        var pixels = new Uint8ClampedArray(w * h * 4);
+        if (this.format === 'DXT1')
+            decodeDXT1(pixels, buffer, w, h);
+        else if (this.format === 'DXT3')
+            decodeDXT3(pixels, buffer, w, h);
+        else if (this.format === 'DXT5')
+            decodeDXT5(pixels, buffer, w, h);
+        return new ImageData(pixels, w, h);
+    };
+
+    function DDS() {
+    }
     DDS.parse = function(buffer) {
         var view = new DataView(buffer);
         assert(readString(buffer, 0x00, 0x04) == 'DDS ');
         assert(view.getUint32(0x04, true) == 0x7C);
-        var dds = {};
+        var dds = new DDS();
 
         dds.height = view.getUint32(0x0C, true);
         dds.width = view.getUint32(0x10, true);
@@ -189,17 +215,22 @@
         assert(dds.pixelFormat == 0x20);
 
         dds.format = readString(buffer, 0x54, 0x04);
-        assert(dds.format == 'DXT5');
+        assert(dds.format == 'DXT1' || dds.format == 'DXT5');
 
         dds.levels = [];
 
         var dataOffs = 0x70;
+        var width = dds.width, height = dds.height;
         for (var i = 0; i < dds.numLevels; i++) {
-            var levelBuffer = buffer.slice(dataOffs);
-            var levelPixels = new Uint8ClampedArray(dds.width * dds.height * 4);
-            dataOffs += decodeDXT5(levelPixels, levelBuffer, dds.width, dds.height);
-            var level = new ImageData(levelPixels, dds.width, dds.height);
-            dds.levels.push(level);
+            if (width === 0) width = 1;
+            if (height === 0) height = 1;
+
+            var size = getCompressedBufferSize(dds.format, width, height);
+            var buffer = buffer.slice(dataOffs, dataOffs + size);
+            dds.levels.push(new Level(i, dds.format, width, height, buffer));
+
+            width = width >> 1;
+            height = height >> 1;
         }
 
         return dds;

@@ -4,9 +4,10 @@
     var GLRender = {};
 
     var VERTEX_ATTRIBS = [
-        { storage: "vec3", attrib: FLVER.StreamDescAttrib.Position, name: "position", },
-        { storage: "vec3", attrib: FLVER.StreamDescAttrib.Normal,   name: "normal", },
-        { storage: "vec2", attrib: FLVER.StreamDescAttrib.UV,       name: "uv", },
+        { storage: "vec3", attrib: FLVER.formatAttrib.Position, name: "position", },
+        { storage: "vec3", attrib: FLVER.formatAttrib.Normal,   name: "normal", },
+        { storage: "vec2", attrib: FLVER.formatAttrib.UV,       name: "uv", },
+        { storage: "vec4", attrib: FLVER.formatAttrib.Color,    name: "color", },
     ];
 
     function generateShader(decls, main) {
@@ -41,6 +42,8 @@
 
         main.push("v_position = a_position;");
         main.push("v_normal = a_normal;");
+        main.push("v_uv = a_uv / 1024.0;");
+        main.push("v_color = a_color;");
 
         var decls = [];
         decls.push.apply(decls, uniforms);
@@ -60,13 +63,14 @@
         var main = [];
 
         header.push("precision mediump float;");
+        uniforms.push("uniform sampler2D g_Diffuse;");
 
         function makeAttribute(attrib) {
             varyings.push("varying " + attrib.storage + " v_" + attrib.name + ";");
         }
         VERTEX_ATTRIBS.forEach(makeAttribute);
 
-        main.push("gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);");
+        main.push("gl_FragColor = texture2D(g_Diffuse, v_uv);");
 
         var decls = [];
         decls.push.apply(decls, header);
@@ -96,7 +100,11 @@
         return shader;
     }
 
+    var MAT = null;
     function generateMaterialProgram(gl, material) {
+        if (MAT)
+            return MAT;
+
         var vert = generateVertShader(material);
         var vertShader = compileShader(gl, vert, gl.VERTEX_SHADER);
 
@@ -118,10 +126,11 @@
             prog.attribLocations[attrib.attrib] = gl.getAttribLocation(prog, "a_" + attrib.name);
         });
 
+        MAT = prog;
         return prog;
     }
 
-    GLRender.translateFLVER = function(gl, flver) {
+    GLRender.translateFLVER = function(gl, flver, res) {
         function translateMaterial(material) {
             var prog = generateMaterialProgram(gl, material);
 
@@ -129,37 +138,151 @@
                 return prog.attribLocations[attrib];
             }
 
+            var params = {};
+            for (var i = material.mtdParamStart; i < material.mtdParamEnd; i++) {
+                var mtdParam = flver.mtdParams[i];
+                params[mtdParam.name] = mtdParam.value;
+            }
+
+            function getTextureFormat(format) {
+                var ext = gl.getExtension('WEBGL_compressed_texture_s3tc');
+                if (format === 'DXT1')
+                    return ext.COMPRESSED_RGB_S3TC_DXT1_EXT;
+                if (format === 'DXT5')
+                    return ext.COMPRESSED_RGBA_S3TC_DXT5_EXT;
+            }
+
+            function loadTexture(name) {
+                var texId = gl.createTexture();
+
+                function loadLevel(level) {
+                    var view = new Uint8Array(level.buffer);
+                    gl.compressedTexImage2D(gl.TEXTURE_2D, level.idx, getTextureFormat(level.format), level.width, level.height, 0, view);
+                }
+
+                res.loadTexture(name).then(function(dds) {
+                    gl.bindTexture(gl.TEXTURE_2D, texId);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                    loadLevel(dds.levels[0]);
+                }, function() {
+                    console.warn("Could not find texture", name);
+                });
+
+                return texId;
+            }
+
+            var diffuseTexId;
+            if (params['g_Diffuse'] !== undefined)
+                diffuseTexId = loadTexture(params['g_Diffuse']);
+            else
+                diffuseTexId = null;
+
             return function(state) {
-                gl.useProgram(program);
-                state.currentProgram = program;
+                gl.useProgram(prog);
+                state.currentProgram = prog;
                 state.getLocationForAttrib = getLocationForAttrib;
-                state.bindUniforms();
+                state.bindUniforms(prog);
+                gl.uniformMatrix4fv(prog.uniformLocations["localMatrix"], false, model.localMatrix);
+                if (diffuseTexId)
+                    gl.bindTexture(gl.TEXTURE_2D, diffuseTexId);
             };
         }
 
-        function translateStreamDesc(streamDesc, totalSize) {
+        function translateformat1(format) {
+            function getComponentType(dataType) {
+                switch (dataType) {
+                case 21:
+                case 22:
+                    // Seen with UV.
+                    return gl.SHORT;
+                case 17:
+                case 19:
+                    // Seen with vertex colors.
+                    return gl.UNSIGNED_BYTE;
+                default:
+                    return gl.FLOAT;
+                }
+            }
+
+            function getComponentCount(dataType) {
+                // TODO: Figure out what these data types are.
+                switch (dataType) {
+                case 17:
+                case 19:
+                    // Colors and normals -- 4 bytes.
+                    return 4;
+                case 21:
+                    // One set of UVs -- two shorts.
+                    return 2;
+                case 22:
+                    // Two sets of UVs -- four shorts.
+                    return 4;
+                case 2:
+                case 18:
+                case 20:
+                case 23:
+                case 24:
+                case 25:
+                    // Everything else -- three floats.
+                    return 3;
+                }
+
+                XXX;
+            }
+
+            // XXX: Yuck, modifying the format :(
+            format.componentCount = getComponentCount(format.dataType);
+            format.componentType = getComponentType(format.dataType);
+
+            function getTypeSize(type) {
+                switch (type) {
+                case gl.BYTE:
+                case gl.UNSIGNED_BYTE:
+                    return 1;
+                case gl.SHORT:
+                case gl.UNSIGNED_SHORT:
+                    return 2;
+                case gl.FLOAT:
+                    return 4;
+                }
+            }
+
+            format.size = getTypeSize(format.componentType) * format.componentCount;
+        }
+
+        function translateformat2(format, totalSize) {
             return function(state) {
-                var location = state.getLocationForAttrib(streamDesc.attrib);
+                var location = state.getLocationForAttrib(format.attrib);
+
+                // We haven't implemented this one yet...
+                if (location === undefined)
+                    return;
+
+                var componentCount = format.componentCount;
+                var componentType = format.componentType;
+
                 gl.vertexAttribPointer(
                     location,         // location
-                    streamDesc.size,  // size
-                    gl.FLOAT,         // type
+                    componentCount,   // count
+                    componentType,    // type
                     false,            // normalize
                     totalSize,        // stride
-                    streamDesc.offset // offset
+                    format.offset // offset
                 );
-                gl.enableVertexAttribPointer(location);
+                gl.enableVertexAttribArray(location);
             };
         }
 
         function translateVtxDesc(vtxDesc) {
-            var streamDescs = flver.streamDescs.slice(vtxDesc.streamDescStart, vtxDesc.streamDescEnd);
+            var formats = flver.formats.slice(vtxDesc.formatStart, vtxDesc.formatEnd);
             var totalSize = 0;
-            streamDescs.forEach(function(streamDesc) {
-                totalSize += streamDesc.size;
-            });
-            var cmd_attribs = streamDescs.map(function(streamDesc) {
-                return translateStreamDesc(streamDesc, totalSize);
+            formats.forEach(function(format) {
+                translateformat1(format);
+                totalSize += format.size;
+            })
+            var cmd_attribs = formats.map(function(format) {
+                return translateformat2(format, totalSize);
             });
 
             return function(state) {
@@ -198,20 +321,20 @@
             var cmd_material = translateMaterial(material);
             var vtxInfo = flver.vtxInfos[batch.vtxInfoStart];
             var cmd_vtxInfo = translateVtxInfo(vtxInfo);
-            var primitives = flver.facesets.slice(batch.facesetStart, batch.facesetEnd);
-            var cmd_primitives = facesets.map(translatePrimitive);
+            var primitives = flver.primitives.slice(batch.primitiveStart, batch.primitiveEnd);
+            var cmd_primitives = primitives.map(translatePrimitive);
             return function(state) {
                 // Set up our material data.
                 cmd_material(state);
                 // Bind the vertex data.
                 cmd_vtxInfo(state);
-                // Run through each faceset and execute the draw.
+                // Run through each primitive and execute the draw.
                 cmd_primitives.forEach(function(f) { return f(state); });
             };
         }
 
-        var cmd_batches = flver.meshes.map(translateBatch);
-        function draw() {
+        var cmd_batches = flver.batches.map(translateBatch);
+        function draw(state) {
             cmd_batches.forEach(function(f) { return f(state); });
         }
 
@@ -225,17 +348,18 @@
         this._gl = gl;
 
         this._projection = mat4.create();
-        mat4.perspective(this._projection, Math.PI / 4, gl.viewportWidth / gl.viewportHeight, 0.1*128, 2500*128);
-
         this._view = mat4.create();
 
-        gl.depthMask(true);
-        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
         gl.clearColor(200/255, 50/255, 153/255, 1);
+        gl.enable(gl.DEPTH_TEST);
 
         this.models = [];
-        this._t = 0;
     }
+    Scene.prototype.resized = function() {
+        var gl = this._gl;
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        mat4.perspective(this._projection, Math.PI / 4, gl.viewportWidth / gl.viewportHeight, 0.1, 2500);
+    };
     Scene.prototype.render = function() {
         var gl = this._gl;
 
@@ -248,25 +372,39 @@
     Scene.prototype.setCamera = function(matrix) {
         mat4.invert(this._view, matrix);
     };
+    Scene.prototype.bindUniforms = function(prog) {
+        var gl = this._gl;
+        gl.uniformMatrix4fv(prog.uniformLocations["projection"], false, this._projection);
+        gl.uniformMatrix4fv(prog.uniformLocations["view"], false, this._view);
+    };
 
-    function Driver(canvas) {
-        this._canvas = canvas;
-        var gl = this._gl = this._canvas.getContext("webgl", { alpha: false });
-        gl.viewportWidth = canvas.width;
-        gl.viewportHeight = canvas.height;
+    function Driver() {
+        this._canvas = document.createElement('canvas');
+        document.body.appendChild(this._canvas);
 
-        this._scene = new Scene(gl);
-        var camera = this._camera = mat4.create();
-        mat4.translate(camera, camera, [-149, -2510, -4353]);
-        this._scene.setCamera(camera);
+        this.gl = this._canvas.getContext("webgl", { alpha: false });
+
+        this._scene = new Scene(this.gl);
+        this._camera = mat4.create();
+        this._scene.setCamera(this._camera);
+        this._resized();
+        window.onresize = this._resized.bind(this);
 
         this._setupMainloop();
     }
+    Driver.prototype._resized = function() {
+        this._canvas.width = window.innerWidth;
+        this._canvas.height = window.innerHeight;
+        this.gl.viewportWidth = this._canvas.width;
+        this.gl.viewportHeight = this._canvas.height;
+        this._scene.resized();
+    };
     Driver.prototype._setupMainloop = function() {
         var keysDown = {};
         var dragging = false, lx = 0, ly = 0;
         var SHIFT = 16;
         var camera = this._camera;
+        var canvas = this._canvas;
 
         function isKeyDown(key) {
             return !!keysDown[key.charCodeAt(0)];
@@ -305,10 +443,10 @@
             var dt = nt - t;
             t = nt;
 
-            var mult = 20;
+            var mult = 1;
             if (keysDown[SHIFT])
                 mult *= 10;
-            mult *= (dt / 16.0);
+            mult *= (dt / 32.0);
 
             var amt;
             amt = 0;
@@ -333,10 +471,14 @@
             mat4.multiply(camera, camera, tmp);
 
             this._scene.setCamera(camera);
+            this._scene.render();
             window.requestAnimationFrame(update);
         }.bind(this);
 
         update(0);
+    };
+    Driver.prototype.setModels = function(models) {
+        this._scene.models = models;
     };
     GLRender.Driver = Driver;
 

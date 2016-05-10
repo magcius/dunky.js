@@ -20,8 +20,11 @@
                 return DCX.decompressBlob(blob);
             });
         };
-        data.load = function() {
-            return file.load(offs, size);
+        data.load = function(localOffs, localSize) {
+            localOffs = localOffs || 0;
+            localOffs += offs;
+            localSize = localSize || size;
+            return file.load(localOffs, localSize);
         };
         return data;
     };
@@ -62,6 +65,7 @@
                 records[recordHash] = Record(dataFile, recordOffset, recordSize);
             }
         }
+        return records;
     };
 
     window.BHD5 = BHD5;

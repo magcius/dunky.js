@@ -7,16 +7,31 @@
     body {
         margin: 0;
         background: black;
+        overflow: hidden;
+    }
+    .load-screen {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: black;
+        transition: opacity 1s;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .load-screen.loading {
+        opacity: 1;
     }
     .load-indicator {
         position: absolute !important;
         bottom: 32px;
         left: 32px;
-        opacity: 0;
-        transition: opacity 1s;
     }
-    .load-indicator.loading {
-        opacity: 1;
+    .map-select {
+        position: absolute;
+        bottom: 32px;
+        right: 32px;
     }
     </style>
   </head>
@@ -24,11 +39,13 @@
     <script src="https://rawgit.com/nodeca/pako/master/dist/pako.js"></script>
     <script src="https://rawgit.com/toji/gl-matrix/master/dist/gl-matrix-min.js"></script>
     <script src="dcx.js"></script>
-    <script src="dds.js"></script>
     <script src="bhd5.js"></script>
+    <script src="bhd.js"></script>
+    <script src="dds.js"></script>
     <script src="tpf.js"></script>
     <script src="msb.js"></script>
     <script src="flver.js"></script>
+    <script src="render.js"></script>
     <script src="dks.js"></script>
   </body>
 </html>
