@@ -181,12 +181,15 @@
     }
 
     function getCompressedBufferSize(format, w, h) {
-        if (format === "DXT1")
-            return (w * h) / 2;
-        else if (format == "DXT3")
-            return (w * h);
-        else if (format == "DXT5")
-            return (w * h);
+        var numBlocksX = (w + 3) >> 2;
+        var numBlocksY = (h + 3) >> 2;
+        var numBlocks = numBlocksX * numBlocksY;
+
+        if (format === "DXT1") {
+            return numBlocks * 8;
+        } else if (format === "DXT3" || format === "DXT5") {
+            return numBlocks * 16;
+        }
     }
 
     function Level(idx, format, width, height, buffer) {
@@ -212,37 +215,59 @@
     }
     DDS.parse = function(buffer) {
         var view = new DataView(buffer);
-        assert(readString(buffer, 0x00, 0x04) == 'DDS ');
-        assert(view.getUint32(0x04, true) == 0x7C);
+        assert(readString(buffer, 0x00, 0x04) === 'DDS ');
+        assert(view.getUint32(0x04, true) === 0x7C);
         var dds = new DDS();
 
         dds.height = view.getUint32(0x0C, true);
         dds.width = view.getUint32(0x10, true);
+        dds.linearSize = view.getUint32(0x14, true);
 
         dds.numLevels = view.getUint32(0x1C, true);
-        if (dds.numLevels == 0)
+        if (dds.numLevels === 0)
             dds.numLevels = 1;
 
         dds.pixelFormat = view.getUint32(0x4C, true);
-        assert(dds.pixelFormat == 0x20);
+        assert(dds.pixelFormat === 0x20);
 
         dds.format = readString(buffer, 0x54, 0x04);
-        assert(dds.format == 'DXT1' || dds.format == 'DXT5');
+        assert(dds.format === 'DXT1' || dds.format === 'DXT5');
 
         dds.levels = [];
 
         var dataOffs = 0x70;
         var width = dds.width, height = dds.height;
-        for (var i = 0; i < dds.numLevels; i++) {
+
+        function readLevel(size) {
+            var levelBuffer = buffer.slice(dataOffs, dataOffs + size);
+            assert(levelBuffer.byteLength === size);
+            dataOffs += size;
+            return levelBuffer;
+        }
+
+        var i = 0;
+        while (true) {
+            var size = getCompressedBufferSize(dds.format, width, height);
+            if (i == 0)
+                assert(size === dds.linearSize);
+
+            var levelBuffer;
+            if (i < dds.numLevels)
+                levelBuffer = readLevel(size);
+            else
+                levelBuffer = new ArrayBuffer(size);
+
+            dds.levels.push(new Level(i, dds.format, width, height, levelBuffer));
+            i++;
+
+            if (width === 1 && height === 1)
+                break;
+
+            width >>= 1;
+            height >>= 1;
+
             if (width === 0) width = 1;
             if (height === 0) height = 1;
-
-            var size = getCompressedBufferSize(dds.format, width, height);
-            var buffer = buffer.slice(dataOffs, dataOffs + size);
-            dds.levels.push(new Level(i, dds.format, width, height, buffer));
-
-            width = width >> 1;
-            height = height >> 1;
         }
 
         return dds;

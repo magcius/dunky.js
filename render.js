@@ -38,7 +38,8 @@
         VERTEX_ATTRIBS.forEach(makeAttribute);
 
         // We should always have position.
-        main.push("gl_Position = u_projection * u_view * u_localMatrix * vec4(a_position, 1.0);");
+        main.push("mat4 flipMatrix = mat4(-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);");
+        main.push("gl_Position = u_projection * u_view * u_localMatrix * flipMatrix * vec4(a_position, 1.0);");
 
         main.push("v_position = a_position;");
         main.push("v_normal = a_normal;");
@@ -71,6 +72,10 @@
         VERTEX_ATTRIBS.forEach(makeAttribute);
 
         main.push("gl_FragColor = texture2D(g_Diffuse, v_uv);");
+
+        // Simple alpha testing -- I have no idea if this is what the game does.
+        main.push("if (gl_FragColor.r < 0.01 && gl_FragColor.g < 0.01 && gl_FragColor.b < 0.01)");
+        main.push("    discard;");
 
         var decls = [];
         decls.push.apply(decls, header);
@@ -162,9 +167,9 @@
 
                 res.loadTexture(name).then(function(dds) {
                     gl.bindTexture(gl.TEXTURE_2D, texId);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                    loadLevel(dds.levels[0]);
+                    dds.levels.forEach(loadLevel);
                 }, function() {
                     console.warn("Could not find texture", name);
                 });

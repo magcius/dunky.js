@@ -143,10 +143,14 @@
             var type = view.getUint32(offs, true);
             offs += 0x04;
 
-            // unk
+            // An index into a group of things, but which things?
+            var unkIdx = view.getUint32(offs, true);
             offs += 0x04;
 
             var modelIndex = view.getUint32(offs, true);
+            offs += 0x04;
+
+            var unk2 = view.getUint32(offs, true);
             offs += 0x04;
 
             function readVec3() {
@@ -157,9 +161,6 @@
                 }
                 return L;
             }
-
-            // unk
-            offs += 0x04;
 
             var translation = readVec3();
             var rotation = readVec3();

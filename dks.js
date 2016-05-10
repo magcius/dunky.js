@@ -195,20 +195,34 @@
         this._dunk = dunk;
         this._textures = textures;
     }
-    Resources.prototype._getKey = function(name) {
+    Resources.prototype._loadTextureFromBHD = function(name) {
         var key = name.split('\\').pop();
         key = key.replace('.tga', '.tpf.dcx');
-        return key;
-    };
-    Resources.prototype.loadTexture = function(name) {
-        var key = this._getKey(name);
         var record = this._textures[key];
         if (!record)
-            return Promise.reject();
+            return null;
 
         return record.loadDCX().then(TPF.parse).then(function(tpf) {
             return DDS.parse(tpf.textures[0].data);
         });
+    };
+    Resources.prototype._loadTextureFromTPF = function(name) {
+        var key = name.split('\\').pop();
+        key = key.replace('.tga', '');
+        var texture = this._textures[key];
+        if (!texture)
+            return null;
+
+        return Promise.resolve(DDS.parse(texture.data));
+    };
+    Resources.prototype.loadTexture = function(name) {
+        var bhd = this._loadTextureFromBHD(name);
+        if (bhd)
+            return bhd;
+        var tpf = this._loadTextureFromTPF(name);
+        if (tpf)
+            return tpf;
+        return Promise.reject();
     };
 
     function Map(dunk, mapID, msb, resources) {
@@ -219,10 +233,17 @@
     }
     Map.prototype.buildModel = function(gl) {
         return Promise.all(this._msb.parts.filter(function(part) {
-            return part.type === MSB.PartType.MapPiece;
+            if (part.type !== MSB.PartType.MapPiece)
+                return false;
+            return true;
         }).map(function(part) {
-            return this._dunk.modelCache.loadModel(this._msb.models[part.modelIndex]).then(function(flver) {
+            var msbModel = this._msb.models[part.modelIndex];
+            return this._dunk.modelCache.loadModel(msbModel).then(function(flver) {
                 var model = GLRender.translateFLVER(gl, flver, this._resources);
+                mat4.translate(model.localMatrix, model.localMatrix, part.translation);
+                mat4.rotateX(model.localMatrix, model.localMatrix, part.rotation[0]);
+                mat4.rotateY(model.localMatrix, model.localMatrix, part.rotation[1]);
+                mat4.rotateZ(model.localMatrix, model.localMatrix, part.rotation[2]);
                 return model;
             }.bind(this));
         }.bind(this))).then(function(models) {
@@ -311,7 +332,10 @@
 
         var loadTextureTPF = function(record) {
             return record.loadDCX().then(function(buffer) {
-                return TPF.parse(buffer, textures);
+                var tpf = TPF.parse(buffer);
+                tpf.textures.forEach(function(tex) {
+                    textures[tex.name] = tex;
+                });
             });
         };
 

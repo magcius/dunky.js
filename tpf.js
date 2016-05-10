@@ -54,6 +54,8 @@
             offs += 0x04;
             var nameOffs = view.getUint32(offs, true);
             offs += 0x04;
+            // Unk.
+            offs += 0x04;
 
             var name = read0String(buffer, nameOffs);
             var data = buffer.slice(dataOffs, dataOffs + size);
