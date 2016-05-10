@@ -5,6 +5,18 @@
         if (!b) XXX;
     }
 
+    window.ImageData = (window.ImageData && window.ImageData.length > 0) ? window.ImageData : (function() {
+        var tmpCanvas = document.createElement('canvas');
+        var ctx = tmpCanvas.getContext('2d');
+        return function ImageData(pixels, width, height) {
+            tmpCanvas.width = width;
+            tmpCanvas.height = height;
+            var im = ctx.getImageData(0, 0, width, height);
+            im.data.set(pixels);
+            return im;
+        }
+    })();
+
     function readString(buffer, offs, length) {
         var buf = new Uint8Array(buffer, offs, length);
         var L = new Array(length);

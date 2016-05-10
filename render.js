@@ -147,7 +147,7 @@
             function getTextureFormat(format) {
                 var ext = gl.getExtension('WEBGL_compressed_texture_s3tc');
                 if (format === 'DXT1')
-                    return ext.COMPRESSED_RGB_S3TC_DXT1_EXT;
+                    return ext.COMPRESSED_RGBA_S3TC_DXT1_EXT;
                 if (format === 'DXT5')
                     return ext.COMPRESSED_RGBA_S3TC_DXT5_EXT;
             }
@@ -352,6 +352,7 @@
 
         gl.clearColor(200/255, 50/255, 153/255, 1);
         gl.enable(gl.DEPTH_TEST);
+        gl.enable(gl.BLEND);
 
         this.models = [];
     }
@@ -382,7 +383,7 @@
         this._canvas = document.createElement('canvas');
         document.body.appendChild(this._canvas);
 
-        this.gl = this._canvas.getContext("webgl", { alpha: false });
+        this.gl = this._canvas.getContext("experimental-webgl", { alpha: false });
 
         this._scene = new Scene(this.gl);
         this._camera = mat4.create();
