@@ -259,9 +259,6 @@
         });
     };
 
-    function Driver() {
-    }
-
     var MAP_FILES = [
         { state: 'm10_01_00_00', label: "Undead Burg / Parish" },
         { state: 'm10_00_00_00', label: "The Depths" },
