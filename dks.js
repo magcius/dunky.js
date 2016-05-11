@@ -240,10 +240,12 @@
             var msbModel = this._msb.models[part.modelIndex];
             return this._dunk.modelCache.loadModel(msbModel).then(function(flver) {
                 var model = GLRender.translateFLVER(gl, flver, this._resources);
-                mat4.translate(model.localMatrix, model.localMatrix, part.translation);
-                mat4.rotateX(model.localMatrix, model.localMatrix, part.rotation[0]);
-                mat4.rotateY(model.localMatrix, model.localMatrix, part.rotation[1]);
-                mat4.rotateZ(model.localMatrix, model.localMatrix, part.rotation[2]);
+                var m = model.localMatrix;
+                mat4.translate(m, m, part.translation);
+                mat4.rotateX(m, m, part.rotation[0] * Math.PI / 180);
+                mat4.rotateY(m, m, part.rotation[1] * Math.PI / 180);
+                mat4.rotateZ(m, m, part.rotation[2] * Math.PI / 180);
+                mat4.scale(m, m, part.scale);
                 return model;
             }.bind(this));
         }.bind(this))).then(function(models) {

@@ -156,7 +156,7 @@
             function readVec3() {
                 var L = new Array(3);
                 for (var i = 0; i < 3; i++) {
-                    L[i] = view.getFloat32(offs);
+                    L[i] = view.getFloat32(offs, true);
                     offs += 0x04;
                 }
                 return L;
