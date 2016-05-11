@@ -259,37 +259,45 @@
         });
     };
 
+    function Driver() {
+    }
+
     var MAP_FILES = [
-        { mapID: 'm10_01_00_00', label: "Undead Burg / Parish" },
-        { mapID: 'm10_00_00_00', label: "The Depths" },
-        { mapID: 'm10_02_00_00', label: "Firelink Shrine" },
-        { mapID: 'm11_00_00_00', label: "Painted World" },
-        { mapID: 'm12_00_00_00', label: "Darkroot Forest" },
-        { mapID: 'm12_00_00_01', label: "Darkroot Basin" },
-        { mapID: 'm12_01_00_00', label: "Royal Wood" },
-        { mapID: 'm13_00_00_00', label: "The Catacombs" },
-        { mapID: 'm13_01_00_00', label: "Tomb of the Giants" },
-        { mapID: 'm13_02_00_00', label: "Ash Lake" },
-        { mapID: 'm14_00_00_00', label: "Blighttown" },
-        { mapID: 'm14_01_00_00', label: "Demon Ruins" },
-        { mapID: 'm15_00_00_00', label: "Sen's Fortress" },
-        { mapID: 'm15_01_00_00', label: "Anor Londo" },
-        { mapID: 'm16_00_00_00', label: "New Londo Ruins" },
-        { mapID: 'm17_00_00_00', label: "Duke's Archives / Crystal Caves" },
-        { mapID: 'm18_00_00_00', label: "Kiln of the First Flame" },
-        { mapID: 'm18_01_00_00', label: "Undead Asylum" },
+        { state: 'm10_01_00_00', label: "Undead Burg / Parish" },
+        { state: 'm10_00_00_00', label: "The Depths" },
+        { state: 'm10_02_00_00', label: "Firelink Shrine" },
+        { state: 'm11_00_00_00', label: "Painted World" },
+        { state: 'm12_00_00_00', label: "Darkroot Forest" },
+        { state: 'm12_00_00_01', label: "Darkroot Basin" },
+        { state: 'm12_01_00_00', label: "Royal Wood" },
+        { state: 'm13_00_00_00', label: "The Catacombs" },
+        { state: 'm13_01_00_00', label: "Tomb of the Giants" },
+        { state: 'm13_02_00_00', label: "Ash Lake" },
+        { state: 'm14_00_00_00', label: "Blighttown" },
+        { state: 'm14_01_00_00', label: "Demon Ruins" },
+        { state: 'm15_00_00_00', label: "Sen's Fortress" },
+        { state: 'm15_01_00_00', label: "Anor Londo" },
+        { state: 'm16_00_00_00', label: "New Londo Ruins" },
+        { state: 'm17_00_00_00', label: "Duke's Archives / Crystal Caves" },
+        { state: 'm18_00_00_00', label: "Kiln of the First Flame" },
+        { state: 'm18_01_00_00', label: "Undead Asylum" },
     ];
 
     function Dunk(fs) {
         this._fs = fs;
         this.archiveManager = new ArchiveManager(this._fs);
         this.modelCache = new ModelCache(this);
+
+        this._canvas = document.createElement('canvas');
+        document.body.appendChild(this._canvas);
+
+        this.gl = this._canvas.getContext("experimental-webgl", { alpha: false });
     }
     Dunk.prototype.load = function() {
         return this.archiveManager.load().then(function() {
             return this._loadLoadScreen();
         }.bind(this)).then(function() {
-            this._driver = new GLRender.Driver();
+            this._buildScene();
             this._buildUI();
             return this;
         }.bind(this));
@@ -299,12 +307,12 @@
         MAP_FILES.forEach(function(map) {
             var option = document.createElement('option');
             option.textContent = map.label;
-            option.mapID = map.mapID;
+            option.state = map.state;
             select.appendChild(option);
         });
         select.oninput = function() {
-            var mapID = select.selectedOptions[0].mapID;
-            this.selectMap(mapID);
+            var state = select.selectedOptions[0].state;
+            this._loadState(state);
         }.bind(this);
         select.oninput();
         return select;
@@ -321,6 +329,22 @@
         var select = this._buildMapSelect();
         ui.appendChild(select);
         document.body.appendChild(ui);
+    };
+    Dunk.prototype._resized = function() {
+        this._canvas.width = window.innerWidth;
+        this._canvas.height = window.innerHeight;
+        this.gl.viewportWidth = this._canvas.width;
+        this.gl.viewportHeight = this._canvas.height;
+        this._scene.resized();
+    };
+    Dunk.prototype._buildScene = function() {
+        this._scene = new GLRender.Scene(this.gl);
+        this._camera = mat4.create();
+        this._scene.setCamera(this._camera);
+        this._resized();
+        window.onresize = this._resized.bind(this);
+
+        this._setupMainloop();
     };
     Dunk.prototype._loadBHD = function(bhdPath, bdtPath, records) {
         var bdt = this.archiveManager.lookupRecord(bdtPath);
@@ -385,13 +409,13 @@
             return new Map(this, mapID, msb, resources);
         }.bind(this));
     };
-    Dunk.prototype.selectMap = function(mapID) {
+    Dunk.prototype._selectMap = function(mapID) {
+        this._mapID = mapID;
         this._setLoading(true);
         return this.loadMap(mapID).then(function(map) {
-            return map.buildModel(this._driver.gl).then(function(model) {
+            return map.buildModel(this.gl).then(function(model) {
                 this._setLoading(false);
-                this._driver.resetCamera();
-                this._driver.setModels([model]);
+                this._setModels([model]);
             }.bind(this));
         }.bind(this));
     };
@@ -416,6 +440,141 @@
             this._setLoading(true);
         }.bind(this));
     };
+    Dunk.prototype._setupMainloop = function() {
+        var keysDown = {};
+        var dragging = false, lx = 0, ly = 0;
+        var SHIFT = 16;
+        var camera = this._camera;
+        var canvas = this._canvas;
+
+        function isKeyDown(key) {
+            return !!keysDown[key.charCodeAt(0)];
+        }
+
+        window.addEventListener('keydown', function(e) {
+            keysDown[e.keyCode] = true;
+        });
+        window.addEventListener('keyup', function(e) {
+            delete keysDown[e.keyCode];
+        });
+
+        canvas.addEventListener('mousedown', function(e) {
+            dragging = true;
+            lx = e.pageX; ly = e.pageY;
+        });
+        canvas.addEventListener('mouseup', function(e) {
+            dragging = false;
+        });
+        canvas.addEventListener('mousemove', function(e) {
+            if (!dragging)
+                return;
+
+            var dx = e.pageX - lx;
+            var dy = e.pageY - ly;
+            var cu = [camera[1], camera[5], camera[9]];
+            vec3.normalize(cu, cu);
+            mat4.rotate(camera, camera, -dx / 500, cu);
+            mat4.rotate(camera, camera, -dy / 500, [1, 0, 0]);
+            lx = e.pageX; ly = e.pageY;
+        });
+
+        var tmp = mat4.create();
+        var t = 0;
+        var update = function(nt) {
+            var dt = nt - t;
+            t = nt;
+
+            var mult = 1;
+            if (keysDown[SHIFT])
+                mult *= 10;
+            mult *= (dt / 32.0);
+
+            var amt;
+            amt = 0;
+            if (isKeyDown('W'))
+                amt = -mult;
+            else if (isKeyDown('S'))
+                amt = mult;
+            tmp[14] = amt;
+
+            amt = 0;
+            if (isKeyDown('A'))
+                amt = -mult;
+            else if (isKeyDown('D'))
+                amt = mult;
+            tmp[12] = amt;
+
+            if (isKeyDown('B'))
+                mat4.identity(camera);
+            if (isKeyDown('C'))
+                console.log(camera);
+
+            mat4.multiply(camera, camera, tmp);
+
+            this._stateUpdated();
+            this._scene.setCamera(camera);
+            this._scene.render();
+            window.requestAnimationFrame(update);
+        }.bind(this);
+
+        var loadStateFromHash = function() {
+            var hash = window.location.hash;
+            if (!hash) hash = '';
+            hash = hash.slice(1);
+            this._loadState(hash);
+        }.bind(this);
+
+        window.addEventListener('hashchange', loadStateFromHash);
+        loadStateFromHash();
+
+        update(0);
+    };
+    Dunk.prototype._setModels = function(models) {
+        this._scene.models = models;
+    };
+
+    Dunk.prototype._serializeState = function() {
+        function serializeCamera(c) {
+            var yaw = Math.atan2(-c[8], c[0]);
+            var pitch = Math.asin(-c[6]);
+            var posX = c[12];
+            var posY = c[13];
+            var posZ = c[14];
+            return [yaw, pitch, posX, posY, posZ].map(function(n) { return n.toFixed(4); }).join(',');
+        }
+
+        return [this._mapID, serializeCamera(this._camera)].join('!');
+    };
+    Dunk.prototype._stateUpdated = function() {
+        var state = this._serializeState();
+        if (state === this._lastState)
+            return;
+
+        this._lastState = state;
+        window.history.replaceState('', '', '#' + state);
+    };
+    Dunk.prototype._loadState = function(S) {
+        function deserializeCamera(c, S) {
+            var parts = S.split(',').map(function(n) { return parseFloat(n); });
+            var yaw = parts[0];
+            var pitch = parts[1];
+            var posX = parts[2], posY = parts[3], posZ = parts[4];
+            mat4.identity(c);
+            mat4.rotateY(c, c, -yaw);
+            mat4.rotateX(c, c, -pitch);
+            c[12] = posX; c[13] = posY; c[14] = posZ;
+        }
+
+        var parts = S.split('!');
+        var mapID = parts[0], cameraS = parts[1];
+        if (!mapID)
+            mapID = 'm10_01_00_00';
+
+        this._selectMap(mapID);
+        if (cameraS)
+            deserializeCamera(this._camera, cameraS);
+    };
+
 
     function globalLoad() {
         return getFileSystem().then(function(fs) {
