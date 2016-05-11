@@ -39,7 +39,7 @@
 
         // We should always have position.
         main.push("mat4 flipMatrix = mat4(-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);");
-        main.push("gl_Position = u_projection * u_view * u_localMatrix * flipMatrix * vec4(a_position, 1.0);");
+        main.push("gl_Position = u_projection * u_view * flipMatrix * u_localMatrix * vec4(a_position, 1.0);");
 
         main.push("v_position = a_position;");
         main.push("v_normal = a_normal;");
