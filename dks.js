@@ -258,7 +258,7 @@
     };
 
     var MAP_FILES = [
-        { mapID: 'm10_01_00_00', label: "Undead Burg" },
+        { mapID: 'm10_01_00_00', label: "Undead Burg / Parish" },
         { mapID: 'm10_00_00_00', label: "The Depths" },
         { mapID: 'm10_02_00_00', label: "Firelink Shrine" },
         { mapID: 'm11_00_00_00', label: "Painted World" },
@@ -269,7 +269,7 @@
         { mapID: 'm13_01_00_00', label: "Tomb of the Giants" },
         { mapID: 'm13_02_00_00', label: "Ash Lake" },
         { mapID: 'm14_00_00_00', label: "Blighttown" },
-        { mapID: 'm14_01_00_00', label: "Demon Ruinds" },
+        { mapID: 'm14_01_00_00', label: "Demon Ruins" },
         { mapID: 'm15_00_00_00', label: "Sen's Fortress" },
         { mapID: 'm15_01_00_00', label: "Anor Londo" },
         { mapID: 'm16_00_00_00', label: "New Londo Ruins" },
